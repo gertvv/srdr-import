@@ -1,0 +1,4 @@
+export SRDR_IMPORT_DB_HOST=172.17.0.2
+export SRDR_IMPORT_DB_NAME=dbname
+export SRDR_IMPORT_DB_USER=dbuser
+export SRDR_IMPORT_DB_PASS=dbpass
