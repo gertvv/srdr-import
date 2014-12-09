@@ -73,19 +73,34 @@
       ))))
 
 (defn arm-rdf
-  [prefix data]
-  (trig/spo (trig/iri (str prefix (:id data)))
+  [[id data]]
+  (trig/spo (trig/iri (:uri data))
             [(trig/iri :rdf "type") (trig/iri :ontology "Arm")]
             [(trig/iri :rdf "label") (trig/lit (:title data))]))
 
-(defn outcome-timepoint-rdf
-  [prefix data]
-  (trig/spo (trig/iri (str prefix (:id data)))
+(defn timepoint-rdf
+  [[uri data]]
+  (trig/spo (trig/iri (:uri data))
+            [(trig/iri :rdf "type") (trig/iri :ontology "MeasurementMoment")]
             [(trig/iri :rdf "label") (str (:number data) " " (:time_unit data))]))
 
+(defn subgroup-rdf
+  [[uri data]]
+  (trig/spo (trig/iri (:uri data))
+            [(trig/iri :rdf "type") (trig/iri :ontology "Stratum")]
+            [(trig/iri :rdf "label") (:title data)]
+            [(trig/iri :rdf "comment") (:description data)]))
+
+(defn measure-rdf
+  [[uri data]]
+  (trig/spo (trig/iri (:uri data))
+            [(trig/iri :rdf "type") (trig/iri :ontology "MeasurementValueProperty")]
+            [(trig/iri :rdf "label") (:title data)]
+            [(trig/iri :rdf "comment") (:description data)]))
+
 (defn outcome-rdf
-  [prefix data]
-  (trig/spo (trig/iri (str prefix (:id data)))
+  [[id data]]
+  (trig/spo (trig/iri (:uri data))
             [(trig/iri :rdf "type") (trig/iri :ontology "Endpoint")]
             [(trig/iri :rdf "label") (trig/lit (:title data))]))
 
@@ -159,25 +174,53 @@
         unique-measures (uri-for-unique-vals measures new-measure)]
       (map-vals measures unique-measures)))
 
-; find data points
+; find measurements
 ; data points are the values of data attributes.
-; the attributes themselves are the outcome_measures.
+; outcome measures define the attributes.
 ; most other identifying information is in the outcome_data_entry.
-; that is except for the arm, which is stored here.
+; that is except for the arm, which is stored at the outcome_data_point.
 ; some restructuring is needed to match ADDIS.
-(defn find-data-points
+(defn find-measurements
   [prefix study-id]
-  (->>
-    (select outcome_data_points (with outcome_measures) (with arms)
-            (join outcome_data_entries (= :outcome_data_entries.id :outcome_measures.outcome_data_entry_id))
-            (fields :id :value :footnote
-                    [:outcome_measure_id :measure_id]
-                    :outcome_data_entries.outcome_id
-                    :outcome_data_entries.timepoint_id
-                    :outcome_data_entries.subgroup_id)
-            (where (= :arms.study_id study-id)))
-    (map (fn [entry] { (:id entry) (dissoc entry :id) }))
-    (apply merge)))
+  (let [new-measurement #(str prefix study-id "/measurement/" (uuid))
+        measurement-pk [:outcome_id :timepoint_id :arm_id :subgroup_id]
+        measurement-val [:value :footnote]
+        insert-measurement (fn [m p]
+                             (let [k (select-keys p measurement-pk)
+                                   prev (if (contains? m k) (m k) {})
+                                   curr (assoc prev (:measure_id p) (select-keys p measurement-val))]
+                               (assoc m k curr)))
+        data (select outcome_data_points (with outcome_measures) (with arms)
+                     (join outcome_data_entries (= :outcome_data_entries.id
+                                                   :outcome_measures.outcome_data_entry_id))
+                     (fields :value :footnote
+                             :outcome_data_entries.outcome_id
+                             :outcome_data_entries.timepoint_id
+                             :arm_id
+                             :outcome_data_entries.subgroup_id
+                             [:outcome_measure_id :measure_id])
+                     (where (= :arms.study_id study-id)))]
+    (->
+      (reduce insert-measurement {} data)
+      (map-vals (fn [v] {:uri (new-measurement) :data v})))))
+
+
+(defn measurement-rdf
+  [[k v] outcomes timepoints subgroups arms measures]
+  (let [add-measure (fn [s [k v]] (trig/spo s [(trig/iri (:uri (measures k))) (:value v)]))
+        uri-of (fn [x] (trig/iri (:uri x)))
+        subj (trig/spo (trig/iri (:uri v))
+                       [(trig/iri :rdf "type") (trig/iri :ontology "Measurement")]
+                       [(trig/iri :ontology "of_outcome") (uri-of (outcomes (:outcome_id k)))]
+                       [(trig/iri :ontology "of_moment") (uri-of (timepoints (:timepoint_id k)))]
+                       [(trig/iri :ontology "of_arm") (uri-of (arms (:arm_id k)))]
+                       [(trig/iri :ontology "of_subgroup") (uri-of (subgroups (:subgroup_id k)))])] ; FIXME
+    (reduce add-measure subj (:data v))))
+
+; index a collection of maps by a key in those maps
+(defn index-by
+  [coll k]
+  (into {} (map (fn [m] { (m k) m }) coll)))
 
 (defn study-rdf
   [prefix study-id]
@@ -194,28 +237,40 @@
                    (map (fn [pub] (publication-rdf secondary_publications (:id pub)))
                         (:secondary_publications study)))
         pmid-pubs (map (fn [pub] (pmid-rdf (:number pub))) pmids)
-        arms (map #(arm-rdf (str uri "/arms/") %) (:arms study))
-        arm-uris (map (comp trig/iri #(str uri "/arms/" %) :id) (:arms study))
-        outcomes (map #(outcome-rdf (str uri "/outcomes/") %) (:outcomes study))
-        outcome-uris (map (comp trig/iri #(str uri "/outcomes/" %) :id) (:outcomes study))
+        arms (into {} (map (fn [v] { (:id v) (assoc v :uri (str uri "/arms/" (:id v))) }) (:arms study)))
+        arms-rdf (map arm-rdf arms)
+        outcomes (into {} (map (fn [v] { (:id v) (assoc v :uri (str uri "/outcomes/" (:id v))) }) (:outcomes study)))
+        outcomes-rdf (map outcome-rdf outcomes)
         add-pubs #(reduce has-publication %1 %2)
         add-nct-ids #(reduce has-nct-id %1 nct-ids)
-        add-arms #(reduce has-arm % arm-uris)
-        add-outcomes #(reduce has-outcome % outcome-uris)
+        add-arms #(reduce has-arm % (map (comp trig/iri :uri) (vals arms)))
+        add-outcomes #(reduce has-outcome % (map (comp trig/iri :uri) (vals outcomes)))
         subgroups (find-subgroups prefix study-id)
+        subgroups-rdf (map subgroup-rdf (index-by (vals subgroups) :uri))
         timepoints (find-timepoints prefix study-id)
+        timepoints-rdf (map timepoint-rdf (index-by (vals timepoints) :uri))
         measures (find-measures prefix study-id) ; essentially attributes of the measurement
-        data-points (find-data-points prefix study-id)]
-    (cons
-     (-> subj
-         (add-pubs pubs)
-         (add-pubs pmid-pubs)
-         (add-nct-ids)
-         (add-arms)
-         (add-outcomes))
-      (concat arms outcomes)
-    )))
+        measures-rdf (map measure-rdf (index-by (vals measures) :uri))
+        measurements (find-measurements prefix study-id)
+        measurements-rdf (map #(measurement-rdf % outcomes timepoints subgroups arms measures) measurements)]
+    { uri (trig/graph
+            (trig/iri uri)
+            (cons
+              (-> subj
+                  (add-pubs pubs)
+                  (add-pubs pmid-pubs)
+                  (add-nct-ids)
+                  (add-arms)
+                  (add-outcomes))
+              (concat arms-rdf
+                      outcomes-rdf
+                      timepoints-rdf
+                      subgroups-rdf
+                      measures-rdf
+                      measurements-rdf)))}))
 
+(defn spo-each [subj pred obj*]    
+  (reduce (fn [subj obj] (trig/spo subj [pred obj])) subj obj*))
 
 (defn -main
   [& args]
@@ -238,10 +293,15 @@
         project (first (select projects
                                (fields :id :title)
                                (with studies (fields :id))
-                               (where {:id project-id})))]
+                               (where {:id project-id})))
+        uri (str "http://srdr.ahrq.gov/projects/" (:id project))
+        studies (into {} (map #(study-rdf (str uri "/studies/") (:id %)) (:studies project)))
+        dataset-rdf [(-> (trig/iri uri)
+                         (trig/spo [(trig/iri :rdf "type") (trig/iri :ontology "Dataset")]
+                                   [(trig/iri :rdfs "label") (:title project)]
+                                   [(trig/iri :rdfs "comment") "Imported from SRDR"])
+                         (spo-each (trig/iri :ontology "contains_study") (keys studies)))]
+
+        meta-graph dataset-rdf]
     (println)
-    (println (trig/write-ttl prefixes
-                             (apply concat (map #(study-rdf (str "http://srdr.ahrq.gov/projects/"
-                                                   (:id project) "/studies/")
-                                              (:id %))
-                                  (:studies project)))))))
+    (println (trig/write-trig prefixes (cons (trig/graph (trig/iri uri) meta-graph) (vals studies))))))
