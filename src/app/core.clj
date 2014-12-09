@@ -294,13 +294,14 @@
                                (fields :id :title)
                                (with studies (fields :id))
                                (where {:id project-id})))
-        uri (str "http://srdr.ahrq.gov/projects/" (:id project))
+        ;uri (str "http://srdr.ahrq.gov/projects/" (:id project))
+        uri (str "http://trials.drugis.org/datasets/srdr-" (:id project)) ; FIXME: ADDIS expects URIs of this form - it should not
         studies (into {} (map #(study-rdf (str uri "/studies/") (:id %)) (:studies project)))
         dataset-rdf [(-> (trig/iri uri)
                          (trig/spo [(trig/iri :rdf "type") (trig/iri :ontology "Dataset")]
                                    [(trig/iri :rdfs "label") (:title project)]
                                    [(trig/iri :rdfs "comment") "Imported from SRDR"])
-                         (spo-each (trig/iri :ontology "contains_study") (keys studies)))]
+                         (spo-each (trig/iri :ontology "contains_study") (map trig/iri (keys studies))))]
 
         meta-graph dataset-rdf]
     (println)
