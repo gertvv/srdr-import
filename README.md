@@ -4,7 +4,7 @@ Import of SRDR projects into TrialVerse / ADDIS RDF format.
 
 ## Usage
 
-`lein run $STUDY_ID`
+`lein run $PROJECT_ID`
 
 ## License
 
