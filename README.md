@@ -18,6 +18,10 @@ Each project (table `projects`) is imported simply with its title, and a descrip
 
 Studies (table `studies`) have a title and description. The title is taken from the first `primary_publications.trial_title` and the description from `primary_publications.title`. In case the title is empty, it is set automatically to "Study X" where X is the database ID of the study.
 
+Note that a study in SRDR is not necessarily a randomized controlled trial, and there is no way to distinguish RCTs from other study types.
+This may break some assumptions in ADDIS, but other work is needed before one is able to analyze SRDR data in ADDIS too.
+This includes adding design information (i.e. epochs and activities), which are ignored by SRDR because it is a review-oriented system.
+
 ### Publications and identifiers
 
 Publications and identifiers are specified in the tables `primary_publications`, `primary_publication_numbers`, and `secondary_publications`. There is also a `secondary_publication_numbers` table, but it is not used.
