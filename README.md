@@ -12,7 +12,12 @@ The SRDR database schema is different in some respects, and at times quite denor
 
 ### Projects
 
-Each project (table `projects`) is imported simply with its title, and a description "Imported from SRDR". At this time, only its contained studies are imported along with it. Other potential project level concepts (outcomes, ...) remain to be done.
+Each project (table `projects`) is imported simply with its title, and a description "Imported from SRDR". At this time, the following are imported along with it:
+
+ - Studies
+ - Outcomes
+
+Other potential project level concepts (adverse events, ...) remain to be done.
 
 ### Studies
 
@@ -91,8 +96,11 @@ One or more measurement attributes per entry of `outcome_data_entry` are defined
     +------------------------------------------------------+-------+
     38 rows in set (0.61 sec)
 
+The top four happen to already be represented in ADDIS, and have been mapped to the appropriate predicates. For the remaining ones, predicates are generated within the study.
 
-TODO: map (most of) these values to actual ontological properties.
+TODO: map remaining ones.
+
+TODO: convert values to numeric as appropriate.
 
 ### Measurements
 
